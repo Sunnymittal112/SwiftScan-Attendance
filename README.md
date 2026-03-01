@@ -1,194 +1,62 @@
-Enhanced System Design
+LAN-Based Smart QR Attendance System
+A robust and efficient attendance management solution developed in Java. This system utilizes Network Socket Programming and QR Code technology to manage student attendance over a Local Area Network (LAN). It is designed to be lightweight, using a file-based storage system instead of a heavy database.
 
-Current Plan Issues:
-Security Risk: Static QR codes easily shareable - proxy attendance ho sakti hai
-Phone Detection: MAC address spoofing possible hai
-No Authentication: Koi bhi QR scan kar sakta hai
-Improved Architecture:
-text
+Project Overview
+The system operates on a Client-Server architecture. The Server (Teacher's Terminal) maintains a centralized log of attendance in a text-based format, while one or more Clients (Scanner Nodes) act as the interface to scan student QR codes and transmit data over the network.
 
-┌─────────────────────────────────────────────────────┐
-│            TEACHER'S SERVER (Java)                   │
-│  - Dynamic QR Generation (5 sec rotation)            │
-│  - Token-based Authentication                        │
-│  - Device Fingerprinting                             │
-│  - Attendance File Management                        │
-└─────────────────────────────────────────────────────┘
-                        ▲
-                        │ LAN (Socket Connection)
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│         STUDENT'S PHONE (Web Browser)                │
-│  - Scan Dynamic QR from Projector/Screen             │
-│  - Auto-submit with device info                      │
-│  - One-time session token                            │
-└─────────────────────────────────────────────────────┘
-Recommended Features
-1. Dynamic QR with Time-based Token
-Java
+Key Features
+Networked Synchronization: Real-time data transmission between the scanner and the central server using TCP/IP Sockets.
 
-// Server generates QR every 5 seconds
-String token = generateToken(currentTime, secretKey);
-String qrData = "http://192.168.1.100:8080/mark?token=" + token;
-2. Device Fingerprinting
-Java
+QR Integration: Seamless decoding of student identifiers using the ZXing library.
 
-// Detect unique device characteristics
-- User-Agent
-- Screen Resolution
-- IP Address
-- Browser Fingerprint (Canvas/WebGL)
-- Session Cookie
-3. Geo-fencing (Optional but Powerful)
-Java
+File-Based Persistence: High-speed data logging into a flat-file (.txt or .csv) format, demonstrating advanced File I/O operations.
 
-// Ensure student is physically in classroom
-if (studentLocation.distanceTo(classroomLocation) > 50) {
-    return "OUT_OF_RANGE";
-}
-4. Rate Limiting
-Java
+Redundancy Control: Built-in logic to prevent duplicate attendance entries for the same student on the same calendar date.
 
-// Prevent spam submissions
-Map<String, Long> lastSubmission = new HashMap<>();
-if (currentTime - lastSubmission.get(deviceId) < 300000) { // 5 min
-    return "COOLDOWN_ACTIVE";
-}
-Improved Project Structure
-text
+Scalability: Capable of handling multiple scanner clients connected to a single central server.
 
-attendance-system/
-│
-├── server/                          # Java Server Application
-│   ├── AttendanceServer.java        # Main server with Socket + HTTP
-│   ├── QRGenerator.java             # Dynamic QR with encryption
-│   ├── TokenManager.java            # JWT/HMAC token handling
-│   ├── DeviceTracker.java           # Device fingerprint validator
-│   ├── FileManager.java             # CSV/TXT file operations
-│   └── config.properties            # Server settings
-│
-├── client-web/                      # Lightweight Web Interface
-│   ├── index.html                   # Student attendance page
-│   ├── scanner.js                   # QR scanning logic (HTML5-QR)
-│   └── styles.css
-│
-├── admin-panel/                     # Teacher's Dashboard
-│   ├── dashboard.html               # Real-time attendance view
-│   └── reports.html                 # Export/Download logs
-│
-├── data/
-│   ├── attendance_2024-01-15.csv    # Daily logs
-│   ├── students.txt                 # Enrolled students
-│   └── devices_whitelist.txt        # Approved devices
-│
-└── libs/
-    ├── zxing-core-3.5.1.jar
-    ├── javax.websocket-api.jar
-    └── gson-2.10.jar
-Security Enhancements
-A. Encrypted QR Payload
-Java
+Technical Specifications
+Language: Java (JDK 17 or higher)
 
-// Server side
-String payload = studentId + "|" + timestamp + "|" + classId;
-String encrypted = AES.encrypt(payload, SECRET_KEY);
-generateQR("http://server/attend?data=" + encrypted);
+Networking: Java Socket API
 
-// Client side decrypts and validates timestamp
-if (currentTime - qrTimestamp > 5000) {
-    return "QR_EXPIRED";
-}
-B. Device Whitelisting
-Java
+QR Engine: ZXing (Zebra Crossing) Library
 
-// First-time device registration
-if (!deviceWhitelist.contains(deviceFingerprint)) {
-    sendApprovalRequest(teacher);
-    return "DEVICE_PENDING_APPROVAL";
-}
-C. Session Management
+Camera Interface: Sarxos Webcam-Capture API
 
-Java
+Data Storage: Flat File System (CSV/Text)
 
-// One QR scan = One session token
-String sessionToken = UUID.randomUUID().toString();
-activeSessions.put(sessionToken, expiryTime);
-Additional Features to Add
-Feature	Priority	Description
-Late Entry Tracking	High	Mark students arriving after threshold time
-Photo Capture	Medium	Optional webcam snapshot during attendance
-Multi-Class Support	High	Different QR codes for different periods
-Export to Excel	Medium	Convert TXT to XLSX with statistics
-Absence Alerts	Low	Notify if student misses >3 classes
-Offline Mode	Medium	Queue attendance if server disconnects
+System Architecture
+1. Central Server
+The server component is responsible for listening for incoming connections on a designated port. Upon receiving a student's unique ID, it validates the data against the current date and appends the record to the master attendance file.
 
-Implementation Steps
-Phase 1: Core System (Week 1)
-Java
+Data Format: Date | Student_ID | Timestamp | Status
 
-✓ Basic Socket Server
-✓ Static QR Generation
-✓ File-based Storage
-✓ Simple Web Interface
-Phase 2: Security (Week 2)
-Java
+2. Scanner Client
+The client component interfaces with the system's hardware (Webcam). It processes the video feed to detect QR codes, extracts the student ID, and establishes a handshake with the server to log the attendance.
 
-✓ Dynamic QR Rotation
-✓ Token Authentication
-✓ Device Fingerprinting
-✓ Duplicate Prevention
-Phase 3: Polish (Week 3)
-Java
+Installation and Setup
+Prerequisites
+All devices must be connected to the same Local Area Network (LAN).
 
-✓ Admin Dashboard
-✓ Real-time Updates (WebSocket)
-✓ Report Generation
-✓ Error Handling
+Java Runtime Environment (JRE) must be configured on all participating machines.
 
-Quick Start Code Snippet
-Server (AttendanceServer.java)
-Java
+Execution Steps
+Initialize Server: Run AttendanceServer.java. Note the IP address of the host machine.
 
-public class AttendanceServer {
-    private static final int PORT = 8080;
-    private static String currentQRToken;
-    
-    public static void main(String[] args) throws IOException {
-        ServerSocket server = new ServerSocket(PORT);
-        
-        // Start QR rotation thread
-        new Thread(() -> {
-            while(true) {
-                currentQRToken = generateToken();
-                displayQRCode(currentQRToken);
-                Thread.sleep(5000);
-            }
-        }).start();
-        
-        // Handle attendance requests
-        while(true) {
-            Socket client = server.accept();
-            new AttendanceHandler(client).start();
-        }
-    }
-}
-Client Web (scanner.js)
-JavaScript
+Launch Client: Run AttendanceScanner.java on the scanning station. Enter the Server's IP address when prompted.
 
-// HTML5 QR Code Scanner
-const html5QrCode = new Html5Qrcode("reader");
+Log Attendance: Present a valid QR code to the camera. The server will confirm the entry and update the local text file instantly.
 
-html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    qrCodeMessage => {
-        fetch(qrCodeMessage) // Server URL from QR
-            .then(res => res.json())
-            .then(data => {
-                if(data.status === "SUCCESS") {
-                    document.body.innerHTML = "Attendance Marked!";
-                    setTimeout(() => window.close(), 2000);
-                }
-            });
-    }
-);
+Project Structure
+Plaintext
+├── src
+│   ├── com.attendance.server
+│   │   └── AttendanceServer.java     # Socket listening and File I/O logic
+│   ├── com.attendance.client
+│   │   └── AttendanceScanner.java    # Webcam integration and QR processing
+│   ├── com.attendance.utils
+│   │   └── QRGenerator.java          # Utility to generate student-specific QRs
+├── data
+│   └── attendance.txt                # Centralized attendance log file
+└── README.md                         # Project documentation
