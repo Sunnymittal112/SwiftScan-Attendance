@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student QR Scanner</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: #fff;
+            padding: 28px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+            max-width: 520px;
+            width: 100%;
+        }
+        h1 {
+            color: #111827;
+            text-align: center;
+            margin-bottom: 16px;
+            font-size: 28px;
+        }
+        .info {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e3a8a;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        #reader {
+            margin: 16px auto;
+            border: 2px solid #2563eb;
+            border-radius: 12px;
+            overflow: hidden;
+            max-width: 100%;
+        }
+        form { display: none; margin-top: 16px; }
+        form.active { display: block; }
+        label {
+            display: block;
+            margin: 10px 0 6px;
+            color: #374151;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+        button {
+            width: 100%;
+            margin-top: 14px;
+            padding: 13px;
+            border: 0;
+            border-radius: 8px;
+            background: #16a34a;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        #message {
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+            font-weight: 600;
+        }
+        #message.error { background: #fee2e2; color: #991b1b; display: block; }
+        #message.success { background: #dcfce7; color: #166534; display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Student QR Scanner</h1>
+    <div class="info">Scan the projector QR, fill details once, and submit attendance.</div>
+
+    <div id="reader"></div>
+
+    <form id="attendanceForm">
+        <input type="hidden" id="token" name="token">
+        <input type="hidden" id="serverUrl" name="serverUrl">
+        <input type="hidden" id="deviceFingerprint" name="deviceFingerprint">
+
+        <label for="rollno">Roll Number</label>
+        <input type="text" id="rollno" name="rollno" required>
+
+        <label for="name">Full Name</label>
+        <input type="text" id="name" name="name" required>
+
+        <label for="class">Class</label>
+        <input type="text" id="class" name="class" required>
+
+        <button type="submit">Submit Attendance</button>
+    </form>
+
+    <div id="message"></div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+    const form = document.getElementById('attendanceForm');
+    const message = document.getElementById('message');
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (localStorage.getItem('attendance_submitted_date') === today) {
+        showMessage('Attendance already submitted from this device today.', 'error');
+        document.getElementById('reader').style.display = 'none';
+    } else {
+        initScanner();
+    }
+
+    initFingerprint();
+
+    function initScanner() {
+        const html5QrCode = new Html5Qrcode('reader');
+        html5QrCode.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                html5QrCode.stop();
+                try {
+                    const url = new URL(decodedText);
+                    const token = url.searchParams.get('token');
+                    if (!token) {
+                        showMessage('Invalid QR Code: token missing.', 'error');
+                        return;
+                    }
+
+                    document.getElementById('token').value = token;
+                    document.getElementById('serverUrl').value = url.origin + url.pathname;
+                    document.getElementById('reader').style.display = 'none';
+                    form.classList.add('active');
+                    document.getElementById('rollno').focus();
+                } catch (e) {
+                    showMessage('Invalid QR Code format.', 'error');
+                }
+            },
+            () => {}
+        ).catch(() => {
+            showMessage('Camera permission denied or unavailable.', 'error');
+        });
+    }
+
+    async function initFingerprint() {
+        const material = [
+            navigator.userAgent,
+            navigator.language,
+            navigator.platform,
+            screen.width + 'x' + screen.height,
+            new Date().getTimezoneOffset()
+        ].join('|');
+
+        const bytes = new TextEncoder().encode(material);
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        const fp = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+        document.getElementById('deviceFingerprint').value = fp;
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const serverUrl = formData.get('serverUrl');
+        formData.delete('serverUrl');
+
+        const params = new URLSearchParams(formData);
+
+        try {
+            showMessage('Submitting...', 'success');
+            const response = await fetch(serverUrl + '?' + params.toString());
+            const html = await response.text();
+
+            if (html.includes('Attendance Marked')) {
+                localStorage.setItem('attendance_submitted_date', today);
+            }
+
+            document.body.innerHTML = html;
+        } catch (error) {
+            showMessage('Network error: ' + error.message, 'error');
+        }
+    });
+
+    function showMessage(text, type) {
+        message.textContent = text;
+        message.className = type;
+    }
+</script>
+</body>
+</html>
