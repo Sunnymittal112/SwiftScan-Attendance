@@ -7,33 +7,42 @@ import fi.iki.elonen.NanoHTTPD;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class AttendanceServer extends NanoHTTPD {
     private static final int PORT = ConfigLoader.getInt("server.port");
+    private static final Set<String> AUTH_REQUIRED_ROUTES = new HashSet<>(Arrays.asList(
+            "/", "/qr/start", "/qr/stop", "/qr/toggle", "/qr/refresh", "/dashboard", "/api/stats"
+    ));
     private static String serverIP;
 
     public AttendanceServer() throws IOException {
         super(PORT);
+        AdminAuthManager.loadCredentials();
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
         serverIP = InetAddress.getLocalHost().getHostAddress();
 
-        System.out.println("\n" + "=".repeat(60));
+        System.out.println("\n" + repeat("=", 60));
         System.out.println("SMART QR ATTENDANCE SYSTEM");
-        System.out.println("=".repeat(60));
+        System.out.println(repeat("=", 60));
         System.out.println("Server IP: " + serverIP);
         System.out.println("Port: " + PORT);
         System.out.println("QR Display: http://" + serverIP + ":" + PORT + "/qr");
         System.out.println("Dashboard: http://" + serverIP + ":" + PORT + "/dashboard");
         System.out.println("Student Scanner: http://" + serverIP + ":" + PORT + "/student");
-        System.out.println("=".repeat(60) + "\n");
+        System.out.println("Admin Login: http://" + serverIP + ":" + PORT + "/login");
+        System.out.println(repeat("=", 60) + "\n");
     }
 
     @Override
@@ -51,14 +60,31 @@ public class AttendanceServer extends NanoHTTPD {
             Response options = newFixedLengthResponse(Response.Status.OK, "text/plain", "OK");
             return withCorsHeaders(options);
         }
-
         Response response;
+        String username = getAuthenticatedUser(session);
+
+        if (AUTH_REQUIRED_ROUTES.contains(uri) && username == null) {
+            if (uri.startsWith("/qr/") || "/api/stats".equals(uri)) {
+                response = newFixedLengthResponse(Response.Status.UNAUTHORIZED, "application/json",
+                        "{\"error\":\"unauthorized\",\"message\":\"Login required\"}");
+                return withCorsHeaders(response);
+            }
+            response = redirectToLogin(uri);
+            return withCorsHeaders(response);
+        }
+
         switch (uri) {
             case "/":
-                response = newFixedLengthResponse(Response.Status.OK, "text/html", getHomePage());
+                response = newFixedLengthResponse(Response.Status.OK, "text/html", getHomePage(username));
+                break;
+            case "/login":
+                response = handleLogin(session, params);
+                break;
+            case "/logout":
+                response = handleLogout(session);
                 break;
             case "/qr":
-                response = newFixedLengthResponse(Response.Status.OK, "text/html", getQRPage());
+                response = newFixedLengthResponse(Response.Status.OK, "text/html", getQRPage(username));
                 break;
             case "/qr/toggle":
                 QRTokenManager.toggleQR();
@@ -87,7 +113,7 @@ public class AttendanceServer extends NanoHTTPD {
                 response = handleMark(session, params);
                 break;
             case "/dashboard":
-                response = newFixedLengthResponse(Response.Status.OK, "text/html", getDashboard());
+                response = newFixedLengthResponse(Response.Status.OK, "text/html", getDashboard(username));
                 break;
             case "/api/stats":
                 response = newFixedLengthResponse(Response.Status.OK, "application/json", getStats());
@@ -167,17 +193,25 @@ public class AttendanceServer extends NanoHTTPD {
         }
     }
 
-    private String getQRPage() {
+    private String getQRPage(String username) {
+        boolean isAuthenticated = username != null;
         // If QR is disabled, show stopped page
         if (!QRTokenManager.isQREnabled()) {
-            return getQRStoppedPage();
+            return getQRStoppedPage(isAuthenticated, username);
         }
         
         String token = QRTokenManager.getCurrentToken();
-        return QRCodeGenerator.generateQRHTMLWithControls("http://" + serverIP + ":" + PORT, token, true);
+        return QRCodeGenerator.generateQRHTMLWithControls("http://" + serverIP + ":" + PORT, token, isAuthenticated, username);
     }
     
-    private String getQRStoppedPage() {
+    private String getQRStoppedPage(boolean isAuthenticated, String username) {
+        String authLink = isAuthenticated
+                ? "<a class='auth-btn' href='/logout'>Logout (" + escapeHtml(username) + ")</a>"
+                : "<a class='auth-btn' href='/login?next=/qr'>Login</a>";
+        String actionButton = isAuthenticated
+                ? "<button class='btn' onclick='startQR()'>START QR SCANNER</button>"
+                : "<a class='btn' href='/login?next=/qr'>LOGIN TO START QR</a>";
+
         return "<!DOCTYPE html><html><head>"
                 + "<meta charset='UTF-8'>"
                 + "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
@@ -186,6 +220,10 @@ public class AttendanceServer extends NanoHTTPD {
                 + "body { display:flex; justify-content:center; align-items:center; "
                 + "height:100vh; background:linear-gradient(135deg, #1f2937 0%, #4b5563 100%); "
                 + "margin:0; flex-direction:column; font-family:Arial; color:#fff; text-align:center; }"
+                + ".home { position:fixed; top:16px; left:16px; }"
+                + ".home-btn { background:#1d4ed8; color:#fff; text-decoration:none; padding:10px 14px; border-radius:8px; font-weight:bold; }"
+                + ".auth { position:fixed; top:16px; right:16px; }"
+                + ".auth-btn { background:#0ea5e9; color:#fff; text-decoration:none; padding:10px 14px; border-radius:8px; font-weight:bold; }"
                 + ".stopped-box { background:#dc2626; padding:40px 60px; border-radius:20px; "
                 + "box-shadow:0 20px 60px rgba(0,0,0,0.5); }"
                 + "h1 { font-size:48px; margin-bottom:20px; }"
@@ -195,31 +233,39 @@ public class AttendanceServer extends NanoHTTPD {
                 + "border:none; cursor:pointer; }"
                 + ".btn:hover { background:#15803d; }"
                 + "</style></head><body>"
+                + "<div class='home'><a class='home-btn' href='/'>Home</a></div>"
+                + "<div class='auth'>" + authLink + "</div>"
                 + "<div class='stopped-box'>"
                 + "<h1>QR SCANNER STOPPED</h1>"
                 + "<p>Attendance marking is currently closed</p>"
-                + "<button class='btn' onclick='startQR()'>START QR SCANNER</button>"
+                + actionButton
                 + "</div>"
                 + "<script>"
                 + "function startQR() {"
-                + "  fetch('/qr/start').then(() => location.reload());"
+                + "  fetch('/qr/start').then(function(res){"
+                + "    if(res.status===401){window.location='/login?next=/qr';return;}"
+                + "    location.reload();"
+                + "  });"
                 + "}"
                 + "</script>"
                 + "</body></html>";
     }
 
     private String getStudentScannerPage() {
-        Path scannerPath = Path.of("web", "student", "index.html");
+        Path scannerPath = java.nio.file.Paths.get("web", "student", "index.html");
         try {
-            return Files.readString(scannerPath, StandardCharsets.UTF_8);
+            return new String(Files.readAllBytes(scannerPath), StandardCharsets.UTF_8);
         } catch (IOException e) {
             return getErrorPage("Missing Student Page", "web/student/index.html not found.");
         }
     }
 
-    private String getHomePage() {
+    private String getHomePage(String username) {
         String qrStatus = QRTokenManager.isQREnabled() ? "ENABLED" : "DISABLED";
         String qrColor = QRTokenManager.isQREnabled() ? "#16a34a" : "#dc2626";
+        String authArea = username == null
+                ? "<a class='login-link' href='/login?next=/qr'>Admin Login</a>"
+                : "<span class='login-link'>Logged in: " + escapeHtml(username) + " | <a href='/logout'>Logout</a></span>";
         
         return "<!DOCTYPE html><html><head>"
                 + "<meta charset='UTF-8'>"
@@ -239,12 +285,12 @@ public class AttendanceServer extends NanoHTTPD {
                 + ".btn.refresh:hover{background:#d97706;}"
                 + ".status{display:inline-block;padding:8px 16px;border-radius:8px;font-weight:bold;margin-bottom:15px;color:#fff;background:" + qrColor + ";}"
                 + "p{color:#374151;margin-top:12px;font-size:16px;}"
-                + ".info{background:#f3f4f6;padding:15px;border-radius:10px;margin-top:20px;}"
-                + ".info h3{margin-bottom:10px;color:#111827;}"
-                + ".info ul{margin-left:20px;color:#4b5563;}"
-                + ".info li{margin-bottom:5px;}"
+                + ".login{margin-bottom:10px;}"
+                + ".login-link{font-size:15px;font-weight:600;color:#1d4ed8;}"
+                + ".login-link a{color:#dc2626;text-decoration:none;font-weight:700;}"
                 + "</style></head><body>"
                 + "<div class='card'>"
+                + "<div class='login'>" + authArea + "</div>"
                 + "<h1>Smart QR Attendance System</h1>"
                 + "<div class='status'>QR Status: " + qrStatus + "</div>"
                 + "<br>"
@@ -258,19 +304,17 @@ public class AttendanceServer extends NanoHTTPD {
                 + "<p><strong>Today's Present:</strong> " + FileManager.getTodayCount() + "</p>"
                 + "<p><strong>Blocked Devices Today:</strong> " + DeviceManager.getDeviceCountToday() + "</p>"
                 + "<p><strong>Date:</strong> " + LocalDate.now() + "</p>"
-                + "<div class='info'>"
-                + "<h3>How it works:</h3>"
-                + "<ul>"
-                + "<li>QR code stays SAME until someone marks attendance</li>"
-                + "<li>After attendance is marked, QR automatically changes</li>"
-                + "<li>Old QR becomes invalid immediately after use</li>"
-                + "<li>Click 'NEW QR' to manually generate fresh QR</li>"
-                + "</ul>"
-                + "</div>"
                 + "</div>"
                 + "<script>"
-                + "function toggleQR() { fetch('/qr/toggle').then(() => location.reload()); }"
-                + "function refreshQR() { fetch('/qr/refresh').then(() => { alert('New QR generated!'); location.reload(); }); }"
+                + "function toggleQR(){"
+                + "fetch('/qr/toggle').then(function(res){"
+                + "if(res.status===401){window.location='/login?next=/';return;}location.reload();"
+                + "});}"
+                + "function refreshQR(){"
+                + "fetch('/qr/refresh').then(function(res){"
+                + "if(res.status===401){window.location='/login?next=/';return;}"
+                + "alert('New QR generated!');location.reload();"
+                + "});}"
                 + "</script>"
                 + "</body></html>";
     }
@@ -354,7 +398,7 @@ public class AttendanceServer extends NanoHTTPD {
                 + "</body></html>";
     }
 
-    private String getDashboard() {
+    private String getDashboard(String username) {
         List<AttendanceRecord> records = FileManager.getTodayRecords();
         StringBuilder tableRows = new StringBuilder();
 
@@ -388,6 +432,8 @@ public class AttendanceServer extends NanoHTTPD {
                 + "<style>"
                 + "body{font-family:Arial;background:#f3f4f6;padding:18px;margin:0;}"
                 + ".header{background:#1d4ed8;color:#fff;padding:18px;border-radius:12px;margin-bottom:16px;}"
+                + ".auth{margin-top:8px;font-size:14px;}"
+                + ".auth a{color:#fef3c7;text-decoration:none;font-weight:bold;}"
                 + ".qr-status{display:inline-block;padding:6px 12px;border-radius:6px;background:" + qrColor + ";color:#fff;font-weight:bold;margin-left:10px;}"
                 + ".stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;}"
                 + ".card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 4px 16px rgba(0,0,0,.08);}"
@@ -395,7 +441,8 @@ public class AttendanceServer extends NanoHTTPD {
                 + "th{background:#2563eb;color:#fff;padding:11px;text-align:left;}"
                 + "td{padding:11px;border-bottom:1px solid #e5e7eb;}"
                 + "</style></head><body>"
-                + "<div class='header'><h1>Today's Attendance Dashboard <span class='qr-status'>QR: " + qrStatus + "</span></h1><p>Auto-refresh every 5 seconds.</p></div>"
+                + "<div class='header'><h1>Today's Attendance Dashboard <span class='qr-status'>QR: " + qrStatus + "</span></h1><p>Auto-refresh every 5 seconds.</p>"
+                + "<div class='auth'>Logged in as <strong>" + escapeHtml(username) + "</strong> | <a href='/logout'>Logout</a></div></div>"
                 + "<div class='stats'>"
                 + "<div class='card'><strong>Total Students:</strong> " + FileManager.getTotalStudents() + "</div>"
                 + "<div class='card'><strong>Present:</strong> " + presentCount + "</div>"
@@ -406,6 +453,122 @@ public class AttendanceServer extends NanoHTTPD {
                 + "<table><thead><tr><th>Roll</th><th>Name</th><th>Time</th><th>Status</th></tr></thead><tbody>"
                 + tableRows
                 + "</tbody></table></body></html>";
+    }
+
+    private Response handleLogin(IHTTPSession session, Map<String, String> params) {
+        String next = sanitizeNextPath(params.get("next"));
+        if (!AdminAuthManager.hasAnyCredentials()) {
+            return newFixedLengthResponse(Response.Status.OK, "text/html",
+                    getLoginPage("No admin credentials found. Add entries in data/admin_credentials.csv", next, safe(params.get("username"))));
+        }
+
+        if (!Method.POST.equals(session.getMethod())) {
+            return newFixedLengthResponse(Response.Status.OK, "text/html", getLoginPage("", next, safe(params.get("username"))));
+        }
+
+        String username = safe(params.get("username"));
+        String password = safe(params.get("password"));
+        String sessionId = AdminAuthManager.createSession(username, password);
+        if (sessionId == null) {
+            return newFixedLengthResponse(Response.Status.UNAUTHORIZED, "text/html",
+                    getLoginPage("Invalid username or password.", next, username));
+        }
+
+        Response response = redirect(next);
+        response.addHeader("Set-Cookie", "admin_session=" + sessionId + "; Path=/; HttpOnly; SameSite=Lax");
+        return response;
+    }
+
+    private Response handleLogout(IHTTPSession session) {
+        String sessionId = getCookieValue(session, "admin_session");
+        AdminAuthManager.invalidateSession(sessionId);
+        Response response = redirect("/login");
+        response.addHeader("Set-Cookie", "admin_session=deleted; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+        return response;
+    }
+
+    private String getAuthenticatedUser(IHTTPSession session) {
+        String sessionId = getCookieValue(session, "admin_session");
+        return AdminAuthManager.getUsernameForSession(sessionId);
+    }
+
+    private Response redirectToLogin(String nextPath) {
+        String encoded;
+        try {
+            encoded = URLEncoder.encode(sanitizeNextPath(nextPath), StandardCharsets.UTF_8.name());
+        } catch (Exception ignored) {
+            encoded = "%2F";
+        }
+        return redirect("/login?next=" + encoded);
+    }
+
+    private Response redirect(String location) {
+        Response response = newFixedLengthResponse(Response.Status.REDIRECT, "text/plain", "Redirecting...");
+        response.addHeader("Location", location);
+        return response;
+    }
+
+    private String getCookieValue(IHTTPSession session, String key) {
+        String cookieHeader = safe(session.getHeaders().get("cookie"));
+        if (cookieHeader.isEmpty()) {
+            return "";
+        }
+        String[] parts = cookieHeader.split(";");
+        for (String part : parts) {
+            String[] pair = part.trim().split("=", 2);
+            if (pair.length == 2 && key.equals(pair[0].trim())) {
+                return pair[1].trim();
+            }
+        }
+        return "";
+    }
+
+    private String sanitizeNextPath(String next) {
+        String value = safe(next);
+        if (value.isEmpty()) {
+            return "/dashboard";
+        }
+        if (!value.startsWith("/") || value.startsWith("//")) {
+            return "/dashboard";
+        }
+        if (value.contains("\n") || value.contains("\r")) {
+            return "/dashboard";
+        }
+        return value;
+    }
+
+    private String getLoginPage(String error, String next, String username) {
+        String errorBox = safe(error).isEmpty() ? "" : "<div class='error'>" + escapeHtml(error) + "</div>";
+        return "<!DOCTYPE html><html><head>"
+                + "<meta charset='UTF-8'>"
+                + "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+                + "<title>Admin Login</title>"
+                + "<style>"
+                + "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f172a,#1d4ed8);font-family:Arial;padding:16px;}"
+                + ".home{position:fixed;top:16px;left:16px;}"
+                + ".home a{background:#0ea5e9;color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:8px;display:inline-block;}"
+                + ".card{width:min(420px,100%);background:#fff;border-radius:14px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.35);}"
+                + "h1{margin:0 0 10px;font-size:28px;color:#111827;}"
+                + "p{margin:0 0 18px;color:#4b5563;}"
+                + "label{display:block;font-weight:700;margin:12px 0 6px;color:#111827;}"
+                + "input{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:10px;font-size:16px;}"
+                + "button{margin-top:16px;width:100%;padding:13px;border:0;border-radius:10px;background:#1d4ed8;color:#fff;font-size:16px;font-weight:700;cursor:pointer;}"
+                + ".error{background:#fee2e2;border:1px solid #ef4444;color:#991b1b;padding:10px;border-radius:8px;margin-bottom:12px;}"
+                + ".hint{margin-top:12px;font-size:13px;color:#6b7280;}"
+                + "</style></head><body>"
+                + "<div class='home'><a href='/'>Home</a></div>"
+                + "<form class='card' method='post' action='/login'>"
+                + "<h1>Admin Login</h1>"
+                + "<p>Use credentials from data/admin_credentials.csv</p>"
+                + errorBox
+                + "<input type='hidden' name='next' value='" + escapeHtml(next) + "'>"
+                + "<label>Username</label>"
+                + "<input name='username' required value='" + escapeHtml(username) + "' placeholder='teacher1'>"
+                + "<label>Password</label>"
+                + "<input type='password' name='password' required placeholder='password'>"
+                + "<button type='submit'>Login</button>"
+                + "<div class='hint'>Authorized users can control QR and view dashboard.</div>"
+                + "</form></body></html>";
     }
 
     private String getStats() {
@@ -477,6 +640,14 @@ public class AttendanceServer extends NanoHTTPD {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private static String repeat(String value, int times) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < times; i++) {
+            builder.append(value);
+        }
+        return builder.toString();
     }
 
     public static void main(String[] args) {
