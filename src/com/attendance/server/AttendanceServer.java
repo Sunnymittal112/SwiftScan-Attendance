@@ -24,7 +24,7 @@ public class AttendanceServer extends NanoHTTPD {
     private static final Set<String> AUTH_REQUIRED_ROUTES = new HashSet<>(Arrays.asList(
             "/", "/qr/start", "/qr/stop", "/qr/toggle", "/qr/refresh", "/dashboard", "/api/stats"
     ));
-    private static final String serverIP = "138.252.100.198"; 
+    private static final String serverIP = "YOUR IP HERE"; 
     
 
     public AttendanceServer() throws IOException {
