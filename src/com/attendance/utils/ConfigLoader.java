@@ -13,10 +13,10 @@ public class ConfigLoader {
             System.out.println("Config loaded successfully");
         } catch (IOException e) {
             System.err.println("Using default config");
-            properties.setProperty("server.port", "8080");
+            properties.setProperty("server.port", "9000");
             properties.setProperty("qr.refresh.interval", "5000");
-            properties.setProperty("encryption.secret", "MySecretKey12345");
-            properties.setProperty("late.time.threshold", "09:10");
+            properties.setProperty("encryption.secret", "8755340335");
+            properties.setProperty("late.time.threshold", "10:30");
             properties.setProperty("admin.credentials.file", "data/admin_credentials.csv");
             properties.setProperty("admin.session.hours", "8");
         }

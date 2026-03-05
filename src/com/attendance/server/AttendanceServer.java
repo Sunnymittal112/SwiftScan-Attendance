@@ -6,7 +6,6 @@ import com.attendance.utils.QRCodeGenerator;
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,13 +24,13 @@ public class AttendanceServer extends NanoHTTPD {
     private static final Set<String> AUTH_REQUIRED_ROUTES = new HashSet<>(Arrays.asList(
             "/", "/qr/start", "/qr/stop", "/qr/toggle", "/qr/refresh", "/dashboard", "/api/stats"
     ));
-    private static String serverIP;
+    private static final String serverIP = "138.252.100.198"; 
+    
 
     public AttendanceServer() throws IOException {
         super(PORT);
         AdminAuthManager.loadCredentials();
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-        serverIP = InetAddress.getLocalHost().getHostAddress();
 
         System.out.println("\n" + repeat("=", 60));
         System.out.println("SMART QR ATTENDANCE SYSTEM");
@@ -133,11 +132,11 @@ public class AttendanceServer extends NanoHTTPD {
     }
 
     private Response handleMark(IHTTPSession session, Map<String, String> params) {
-        if (!isLanClient(session)) {
+        /*if (!isLanClient(session)) {
             return newFixedLengthResponse(Response.Status.FORBIDDEN, "text/html",
                     getErrorPage("LAN Access Only", "This attendance server accepts LAN/private network requests only."));
-        }
-
+        }*/
+       
         String token = safe(params.get("token"));
         if (token.isEmpty()) {
             return newFixedLengthResponse(Response.Status.OK, "text/html",
@@ -180,7 +179,6 @@ public class AttendanceServer extends NanoHTTPD {
         String result = FileManager.markAttendance(rollNo.trim(), name.trim(), studentClass.trim());
         switch (result) {
             case "SUCCESS":
-                // Mark token as used after successful attendance - this invalidates the QR
                 QRTokenManager.markTokenAsUsed(token);
                 DeviceManager.registerSubmission(effectiveFingerprint, rollNo.trim());
                 return newFixedLengthResponse(Response.Status.OK, "text/html", getSuccessPage(name, rollNo));
@@ -195,7 +193,6 @@ public class AttendanceServer extends NanoHTTPD {
 
     private String getQRPage(String username) {
         boolean isAuthenticated = username != null;
-        // If QR is disabled, show stopped page
         if (!QRTokenManager.isQREnabled()) {
             return getQRStoppedPage(isAuthenticated, username);
         }
@@ -606,7 +603,7 @@ public class AttendanceServer extends NanoHTTPD {
         }
 
         ip = ip.toLowerCase(Locale.ROOT);
-        if ("::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "127.0.0.1".equals(ip)) {
+        if ("::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "138.252.100.198".equals(ip)) {
             return true;
         }
         if (ip.startsWith("10.") || ip.startsWith("192.168.")) {
@@ -652,12 +649,8 @@ public class AttendanceServer extends NanoHTTPD {
 
     public static void main(String[] args) {
         try {
-            // Generate initial token
             QRTokenManager.generateNewToken();
-
-            // NO AUTO-REFRESH - Token stays same until used or manually refreshed
             System.out.println("QR Token will remain valid until attendance is marked.");
-
             new AttendanceServer();
         } catch (IOException e) {
             System.err.println("Server failed to start: " + e.getMessage());
