@@ -16,7 +16,6 @@ Core goals:
 * One-scan, one-submit flow
 * Anti-proxy attendance protection
 * Real database storage
-* Easy deployment in colleges
 
 ---
 
