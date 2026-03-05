@@ -244,5 +244,3 @@ Planned improvements:
 
 ---
 
-
- a LICENSE file before open-source distribution.
