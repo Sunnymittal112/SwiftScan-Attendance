@@ -1,44 +1,57 @@
-﻿# SwiftScan Attendance (Smart QR Attendance System)
+# SwiftScan Attendance (Smart QR Attendance System)
 
-A lightweight Java-based LAN attendance system that uses **single-use QR tokens** to reduce proxy attendance and simplify classroom check-ins.
+A lightweight Java-based attendance system that uses **single-use QR tokens** to reduce proxy attendance and simplify classroom check-ins.
 
-## Overview
+Originally the project used **CSV file-based storage**, but it has now been **upgraded to support MySQL / MariaDB databases** for better scalability and real-world deployment in colleges.
 
-This project runs a local HTTP server on the teacher system. Students scan a QR code from their phone, submit roll/name/class, and attendance is saved to date-wise CSV files.
+---
+
+# Overview
+
+This project runs a local HTTP server on the teacher system or VPS. Students scan a QR code from their phone, submit roll/name/class, and attendance is saved in a database.
 
 Core goals:
-- Fast attendance on local network
-- One-scan, one-submit flow
-- Basic anti-abuse controls (single-use token + device blocking)
-- Simple CSV-based storage (no database required)
 
-## Key Features
+* Fast attendance marking
+* One-scan, one-submit flow
+* Anti-proxy attendance protection
+* Real database storage
+* Easy deployment in colleges
 
-- QR-based attendance marking (`/qr` + `/mark`)
-- Single-use token flow: token is invalidated after successful attendance
-- Auto-generation of next token after each successful mark
-- Device fingerprint based one-device-one-submit-per-day restriction
-- LAN/private network access check for attendance endpoint
-- Web dashboard with live stats and auto-refresh
-- QR start/stop controls for class management
-- Late/PRESENT status based on configurable cutoff time
+---
 
-## Tech Stack
+# Key Features
 
-- Java (JDK 8+ recommended)
-- [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd) for embedded HTTP server
-- [ZXing](https://github.com/zxing/zxing) for QR generation
-- HTML/CSS/JS frontend (`web/student/index.html`)
-- CSV file persistence in `data/`
+* QR-based attendance marking (`/qr` + `/mark`)
+* Single-use token system
+* Device fingerprint blocking (one device per day)
+* Dashboard with live stats
+* QR start / stop controls
+* Late/PRESENT status based on configurable cutoff
+* MySQL / MariaDB database storage
+* CSV system replaced with database support
 
-## Project Structure
+---
 
-```text
+# Tech Stack
+
+* Java (JDK 8+ recommended)
+* NanoHTTPD (Embedded HTTP server)
+* ZXing (QR code generation)
+* HTML/CSS/JS frontend
+* MySQL / MariaDB database
+
+---
+
+# Project Structure
+
+```
 SmartQRAttendance/
 |-- src/com/attendance/
 |   |-- server/
 |   |   |-- AttendanceServer.java
 |   |   |-- FileManager.java
+|   |   |-- DatabaseManager.java
 |   |   |-- DeviceManager.java
 |   |   `-- QRTokenManager.java
 |   |-- models/
@@ -49,133 +62,187 @@ SmartQRAttendance/
 |       |-- QRCodeGenerator.java
 |       `-- TokenEncryption.java
 |-- web/student/index.html
-|-- data/
-|   |-- config.properties
-|   |-- students.csv
-|   |-- attendance/
-|   `-- devices/
+|-- data/config.properties
 |-- libs/
 |-- compile.bat / run.bat
 `-- compile.sh / run.sh
 ```
 
-## How It Works
+---
+
+# How It Works
 
 1. Teacher starts server.
 2. QR page (`/qr`) displays tokenized attendance URL.
 3. Student scans QR and opens secure attendance form.
-4. Student submits details.
+4. Student submits roll number, name and class.
 5. Server validates:
-   - request from LAN/private network
-   - token is valid and unused
-   - device has not submitted today
-   - roll number not already marked today
+
+* token is valid and unused
+* device has not submitted today
+* roll number not already marked today
+
 6. On success:
-   - attendance written to `data/attendance/YYYY-MM-DD.csv`
-   - device fingerprint written to `data/devices/YYYY-MM-DD.csv`
-   - token is marked used
-   - new token generated for next student
 
-## Setup and Run
+* attendance saved to **database**
+* device fingerprint stored
+* token marked used
+* new token generated
 
-## Prerequisites
+---
 
-- Java installed (`java` and `javac` in PATH)
-- All jars present in `SmartQRAttendance/libs`
+# Database Setup
+
+Create a database first.
+
+```
+CREATE DATABASE swiftscan;
+```
+
+Select database:
+
+```
+USE swiftscan;
+```
+
+---
+
+## Attendance Table
+
+```
+CREATE TABLE attendance (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id VARCHAR(50),
+    name VARCHAR(100),
+    class_id VARCHAR(50),
+    date DATE,
+    time TIME,
+    status VARCHAR(20)
+);
+```
+
+---
+
+## Students Table (Optional but Recommended)
+
+```
+CREATE TABLE students (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    roll_no VARCHAR(50),
+    name VARCHAR(100),
+    class VARCHAR(50)
+);
+```
+
+---
+
+# Database Configuration
+
+Edit `data/config.properties`:
+
+```
+db.url=jdbc:mysql://localhost:3306/swiftscan
+db.username=YOUR_DB_USERNAME
+db.password=YOUR_DB_PASSWORD
+```
+
+Example:
+
+```
+db.url=jdbc:mysql://localhost:3306/swiftscan
+db.username=SunnyMittal
+db.password=yourpassword
+```
+
+---
+
+# Setup and Run
 
 ## Windows
 
-```bash
+```
 cd SmartQRAttendance
 compile.bat
 run.bat
 ```
 
-## Linux/macOS
+## Linux / macOS
 
-```bash
+```
 cd SmartQRAttendance
 chmod +x compile.sh run.sh
 ./compile.sh
 ./run.sh
 ```
 
-When server starts, it prints URLs like:
-- Home: `http://<server-ip>:8080/`
-- QR Screen: `http://<server-ip>:8080/qr`
-- Dashboard: `http://<server-ip>:8080/dashboard`
-- Student Scanner: `http://<server-ip>:8080/student`
+---
 
-## Configuration
+# Server URLs
 
-Edit `SmartQRAttendance/data/config.properties`:
+When server starts, it prints:
 
-```properties
-server.port=8080
-qr.refresh.interval=60000
-encryption.secret=MySecretKey12345
-late.time.threshold=09:10
+Home
+
+```
+http://<server-ip>:8080/
 ```
 
-Parameter meaning:
-- `server.port`: HTTP server port
-- `qr.refresh.interval`: token validity window in milliseconds (also used by QR page refresh timer)
-- `encryption.secret`: AES secret seed for token encryption (normalized to 16 bytes)
-- `late.time.threshold`: after this time, status is marked `LATE`
+QR Screen
 
-## API / Routes
+```
+http://<server-ip>:8080/qr
+```
 
-- `GET /` -> Home page with controls
-- `GET /qr` -> QR display page
-- `GET /qr/start` -> Enable QR scanning
-- `GET /qr/stop` -> Disable QR scanning
-- `GET /qr/toggle` -> Toggle QR status
-- `GET /qr/refresh` -> Generate new token manually
-- `GET /student` -> Student web scanner UI
-- `GET /mark` -> Attendance validation + marking endpoint
-- `GET /dashboard` -> Live attendance dashboard
-- `GET /api/stats` -> JSON stats
+Dashboard
 
-## Data Files
+```
+http://<server-ip>:8080/dashboard
+```
 
-- `data/students.csv`
-  - master student list
-  - format: `RollNo,Name,Class`
-- `data/attendance/YYYY-MM-DD.csv`
-  - daily attendance entries
-  - format: `roll,name,timestamp,status`
-- `data/devices/YYYY-MM-DD.csv`
-  - daily device fingerprint registry
-  - format: `fingerprint,roll`
+Student Scanner
 
-## Security Notes
+```
+http://<server-ip>:8080/student
+```
 
-Current implementation includes:
-- Single-use QR tokens
-- Time-bound token validation
-- Device fingerprint daily lock
-- LAN-only access check for attendance marking
+---
 
-Recommended production hardening:
-- Move from plain HTTP to HTTPS/reverse proxy
-- Use stronger identity verification than self-entered name/class
-- Rotate encryption secret and keep it outside repo
-- Add authentication for admin endpoints (`/qr/*`, `/dashboard`)
+# API Routes
 
-## Troubleshooting
+| Route         | Description       |
+| ------------- | ----------------- |
+| `/`           | Home page         |
+| `/qr`         | QR display        |
+| `/qr/start`   | Start attendance  |
+| `/qr/stop`    | Stop attendance   |
+| `/qr/refresh` | Generate new QR   |
+| `/student`    | Student scanner   |
+| `/mark`       | Attendance submit |
+| `/dashboard`  | Live dashboard    |
+| `/api/stats`  | JSON stats        |
 
-- `Error loading students`: confirm `data/students.csv` exists and has proper header + rows.
-- `Compilation failed`: verify Java version and `libs/*` jars.
-- Students cannot access server: confirm both devices are on same LAN and firewall allows chosen port.
-- Camera not opening in scanner page: allow browser camera permission on phone.
+---
 
-## Current Limitations
+# Security Features
 
-- CSV storage only (no DB transactions)
-- No teacher authentication for control endpoints
-- Device fingerprint can be bypassed on advanced browsers/devices
-- In-memory state (token/device maps) resets on server restart
+* Single-use QR tokens
+* Device fingerprint lock
+* Token expiration
+* Anti-proxy design
 
-## License
+---
 
-No license file is currently included. Add a `LICENSE` file before open-source distribution.
+# Future Improvements
+
+Planned improvements:
+
+* Weekly attendance reports
+* Monthly analytics dashboard
+* Student auto lookup from database
+* Export attendance to Excel
+* Teacher authentication system
+
+---
+
+
+ a LICENSE file before open-source distribution.
