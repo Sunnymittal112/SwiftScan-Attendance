@@ -171,7 +171,9 @@ run.bat
 cd SmartQRAttendance
 chmod +x compile.sh run.sh
 ./compile.sh
-./run.sh
+./start.sh
+./session.sh
+./stop.sh
 ```
 
 ---

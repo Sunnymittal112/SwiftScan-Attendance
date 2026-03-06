@@ -160,7 +160,7 @@ public class AttendanceServer extends NanoHTTPD {
         if (rollNo.isEmpty() && name.isEmpty() && studentClass.isEmpty()) {
             if (DeviceManager.hasSubmittedToday(effectiveFingerprint)) {
                 return newFixedLengthResponse(Response.Status.OK, "text/html",
-                        getErrorPage("Already Submitted", "This device has already submitted attendance today."));
+                        getErrorPage("Already Submitted", "You Already Submitted Your Attandance."));
             }
             return newFixedLengthResponse(Response.Status.OK, "text/html", getStudentFormPage(token));
         }
