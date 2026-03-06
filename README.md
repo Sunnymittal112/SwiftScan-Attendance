@@ -2,13 +2,13 @@
 
 A lightweight Java-based attendance system that uses **single-use QR tokens** to reduce proxy attendance and simplify classroom check-ins.
 
-Originally the project used **CSV file-based storage**, but it has now been **upgraded to support MySQL / MariaDB databases** for better scalability and real-world deployment in colleges.
+Originally the project used **CSV file-based storage**, but it has now been **upgraded to support MySQL / MariaDB databases** for better scalability and real-world deployment.
 
 ---
 
 # Overview
 
-This project runs a local HTTP server on the teacher system or VPS. Students scan a QR code from their phone, submit roll/name/class, and attendance is saved in a database.
+This project runs a local HTTP server on Your Computer system or VPS. Students scan a QR code from their phone, submit roll/name/class, and attendance is saved in a database.
 
 Core goals:
 
@@ -71,7 +71,7 @@ SmartQRAttendance/
 
 # How It Works
 
-1. Teacher starts server.
+1. You starts server.
 2. QR page (`/qr`) displays tokenized attendance URL.
 3. Student scans QR and opens secure attendance form.
 4. Student submits roll number, name and class.
@@ -165,7 +165,7 @@ compile.bat
 run.bat
 ```
 
-## Linux / macOS
+## Linux / macOS / Ubuntu
 
 ```
 cd SmartQRAttendance
