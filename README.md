@@ -169,7 +169,7 @@ run.bat
 
 ```
 cd SmartQRAttendance
-chmod +x compile.sh run.sh
+chmod +x compile.sh start.sh session.sh stop.sh 
 ./compile.sh
 ./start.sh
 ./session.sh
